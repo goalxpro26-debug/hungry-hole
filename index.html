@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hungry Hole: Eat Everything</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: #10131f; font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif; color: #f2f0ff; }
+  body { display: flex; justify-content: center; min-height: 100vh; }
+  #wrap { position: relative; width: min(100vw, 480px, 66.666dvh); aspect-ratio: 480 / 720; background: #1b2140; overflow: hidden; }
+  #hud { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; background: rgba(12, 15, 32, 0.88); font-size: 13px; font-weight: bold; }
+  #hud .stat { white-space: nowrap; }
+  #hud .spacer { flex: 1; }
+  #hud button, .screen button { cursor: pointer; border: none; border-radius: 10px; font-weight: bold;
+    font-family: inherit; color: #fff; background: #6c4fd8; padding: 7px 12px; font-size: 14px; }
+  #hud button:active, .screen button:active { transform: scale(0.96); }
+  #btn-mute.muted { background: #555; }
+  #timebar { position: absolute; top: 38px; left: 0; right: 0; height: 6px; background: rgba(255,255,255,0.15); z-index: 5; }
+  #timefill { height: 100%; width: 100%; background: linear-gradient(90deg, #57e389, #ffd23f); }
+  #progbar { position: absolute; top: 44px; left: 0; right: 0; height: 5px; background: rgba(255,255,255,0.10); z-index: 5; }
+  #progfill { height: 100%; width: 0%; background: linear-gradient(90deg, #b388ff, #ff7ad9); }
+  #game { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  .screen { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 24px; background: rgba(10, 12, 28, 0.82); }
+  .screen.hidden { display: none; }
+  .screen h1 { font-size: 40px; line-height: 1.05; color: #ffd23f; text-shadow: 0 3px 0 #7a3cff, 0 6px 14px rgba(0,0,0,0.6); margin-bottom: 6px; }
+  .screen h2 { font-size: 30px; color: #ffd23f; margin-bottom: 8px; text-shadow: 0 2px 0 #7a3cff; }
+  .screen p { font-size: 15px; line-height: 1.5; color: #e8e6ff; max-width: 380px; margin-bottom: 10px; }
+  .screen .howto { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); border-radius: 12px;
+    padding: 12px 14px; font-size: 14px; line-height: 1.6; text-align: left; margin-bottom: 14px; max-width: 380px; }
+  .screen .howto b { color: #ffd23f; }
+  .screen button { font-size: 18px; padding: 12px 26px; margin-top: 6px; background: #ff5d8f; box-shadow: 0 4px 0 #a12248; }
+  .screen button.secondary { background: #6c4fd8; box-shadow: 0 4px 0 #3d2a86; font-size: 15px; padding: 9px 18px; }
+  .bigscore { font-size: 22px; color: #7dffb0; font-weight: bold; margin: 4px 0 10px; }
+  #toast { position: absolute; left: 50%; top: 110px; transform: translateX(-50%); z-index: 6; pointer-events: none;
+    font-size: 20px; font-weight: bold; color: #ffd23f; text-shadow: 0 2px 6px rgba(0,0,0,0.8); opacity: 0; transition: opacity 0.15s; }
+  .hole-demo { width: 110px; height: 110px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <span class="stat" id="hud-level">Round 1/20</span>
+    <span class="stat" id="hud-score">Score 0</span>
+    <span class="stat" id="hud-lives" style="color:#ff7d9c">♥♥♥</span>
+    <span class="spacer"></span>
+    <span class="stat" id="hud-time">75s</span>
+    <button id="btn-mute" title="Mute (M)">♪</button>
+    <button id="btn-pause" title="Pause (P)">II</button>
+  </div>
+  <div id="timebar"><div id="timefill"></div></div>
+  <div id="progbar"><div id="progfill"></div></div>
+  <canvas id="game" width="480" height="720"></canvas>
+  <div id="toast"></div>
+
+  <div class="screen" id="screen-menu">
+    <canvas class="hole-demo" id="demo-canvas" width="220" height="220"></canvas>
+    <h1>HUNGRY HOLE<br>Eat Everything</h1>
+    <p>You are <b style="color:#b388ff">Gulp</b>, a little hungry crater loose in the park.
+       Swallow everything smaller than you, grow huge, and out-eat the rival craters before time runs out!</p>
+    <div class="howto">
+      <b>How to play</b><br>
+      • Move: drag / move mouse, or WASD / arrow keys.<br>
+      • Eat anything <b>smaller</b> than your hole — pebbles, mushrooms, cones, benches, cars, Wobblers…<br>
+      • Eating grows you, so bigger snacks unlock as you grow.<br>
+      • Rival craters eat too! A <b>bigger</b> rival that touches you costs a life. Outgrow one and eat <i>it</i> for +300. Rivals give you a few seconds at the start of each round before they start hunting.<br>
+      • Reach the round target score before the timer ends. 20 rounds, 3 lives. Combo eats pay more!
+    </div>
+    <button id="btn-start">▶ &nbsp;Start Eating</button>
+    <p id="best-line" style="margin-top:12px;font-size:13px;color:#b9b4e6"></p>
+  </div>
+
+  <div class="screen hidden" id="screen-clear">
+    <h2>Round Clear!</h2>
+    <p id="clear-text"></p>
+    <div class="bigscore" id="clear-score"></div>
+    <p style="font-size:13px;color:#b9b4e6">Next round loading…</p>
+    <button id="btn-next">Next Round →</button>
+  </div>
+
+  <div class="screen hidden" id="screen-timeup">
+    <h2>Time's Up!</h2>
+    <p id="timeup-text"></p>
+    <div class="bigscore" id="timeup-lives"></div>
+    <p style="font-size:13px;color:#b9b4e6">Same round, fresh timer…</p>
+    <button id="btn-retry-round">Retry Round</button>
+  </div>
+
+  <div class="screen hidden" id="screen-pause">
+    <h2>Paused</h2>
+    <p>Take a breath. Gulp is waiting.</p>
+    <button id="btn-resume">Resume</button><br>
+    <button class="secondary" id="btn-quit">Quit to Menu</button>
+  </div>
+
+  <div class="screen hidden" id="screen-over">
+    <h2>Game Over</h2>
+    <p>The rival craters win this time. Gulp is still hungry…</p>
+    <div class="bigscore" id="over-score"></div>
+    <button id="btn-again-over">Try Again</button>
+  </div>
+
+  <div class="screen hidden" id="screen-win">
+    <h2>YOU ATE EVERYTHING!</h2>
+    <p>Gulp out-ate every rival crater across all 20 rounds and is now the biggest hole in the park. Legendary appetite!</p>
+    <div class="bigscore" id="win-score"></div>
+    <p id="win-best" style="font-size:14px;color:#b9b4e6"></p>
+    <button id="btn-again-win">Play Again</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   HUNGRY HOLE: EAT EVERYTHING — an original game.
+   Mechanics only inspired by the grow-by-eating arena genre.
+   All art is drawn procedurally on canvas; all music/SFX are
+   synthesised with WebAudio. No copied assets, names or code.
+   ============================================================ */
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 720;               // logical canvas size (portrait)
+const DPR = 1; // capped at 1: software (SwiftShader) rendering stays fast; art is vector-drawn so it stays crisp
+canvas.width = W * DPR; canvas.height = H * DPR;
+ctx.scale(DPR, DPR);
+
+// ---------- helpers ----------
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+const $ = id => document.getElementById(id);
+
+// ---------- audio (all synthesised, original) ----------
+let audioCtx = null, masterGain = null, musicGain = null, muted = false;
+let musicTimer = null, musicStep = 0;
+function initAudio() {
+  if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain(); masterGain.gain.value = muted ? 0 : 0.9;
+    masterGain.connect(audioCtx.destination);
+    musicGain = audioCtx.createGain(); musicGain.gain.value = 0.16;
+    musicGain.connect(masterGain);
+    startMusic();
+  } catch (e) { /* audio unavailable — game still plays */ }
+}
+function tone(freq, dur, type, vol, when, slideTo) {
+  if (!audioCtx || muted) return;
+  const t = audioCtx.currentTime + (when || 0);
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol || 0.25, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function sfx(name, combo) {
+  if (!audioCtx) return;
+  const c = Math.min(combo || 1, 8);
+  if (name === 'gulp')  tone(300 + c * 45, 0.14, 'sine', 0.35, 0, 620 + c * 60);
+  if (name === 'chomp') { tone(180, 0.22, 'square', 0.22, 0, 70); tone(520, 0.16, 'sine', 0.3, 0.02, 900); }
+  if (name === 'hurt')  tone(320, 0.35, 'sawtooth', 0.28, 0, 90);
+  if (name === 'clear') [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'triangle', 0.28, i * 0.09));
+  if (name === 'win')   [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.3, 'triangle', 0.28, i * 0.11));
+  if (name === 'lose')  [392, 330, 262, 196].forEach((f, i) => tone(f, 0.28, 'triangle', 0.25, i * 0.13));
+  if (name === 'click') tone(660, 0.06, 'sine', 0.2);
+}
+// Original looping melody: C major pentatonic walk, triangle lead + soft bass.
+const MELODY = [262, 294, 330, 392, 440, 392, 330, 294, 330, 392, 523, 440, 392, 330, 262, 0];
+const BASS   = [131, 0, 165, 0, 196, 0, 165, 0, 131, 0, 165, 0, 196, 220, 196, 0];
+function startMusic() {
+  if (musicTimer) return;
+  musicTimer = setInterval(() => {
+    if (!audioCtx || muted || G.screen === 'menu') { musicStep++; return; }
+    const m = MELODY[musicStep % MELODY.length];
+    const b = BASS[musicStep % BASS.length];
+    if (m) { const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'triangle'; o.frequency.value = m;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.5, audioCtx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.42);
+      o.connect(g); g.connect(musicGain); o.start(); o.stop(audioCtx.currentTime + 0.45); }
+    if (b) { const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = b;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.4, audioCtx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+      o.connect(g); g.connect(musicGain); o.start(); o.stop(audioCtx.currentTime + 0.55); }
+    musicStep++;
+  }, 240);
+}
+
+// ---------- level design (20 rounds) ----------
+function levelCfg(n) { // n = 1..20
+  return {
+    world: Math.min(900 + (n - 1) * 50, 1800),          // bigger maps later
+    target: 200 + n * 80,                               // score to reach
+    time: Math.max(100 - n, 70),                        // seconds
+    rivals: Math.min(1 + Math.floor((n - 1) / 6), 3),   // 1 -> 3 rivals (third joins at round 13)
+    rivalR: Math.min(19 + n * 0.7, 30),
+    rivalSpeed: 42 + n * 3.5,
+    small: 26 + n, medium: 10 + Math.floor(n / 2),
+    large: 5 + Math.floor(n / 2), cars: 3 + Math.floor(n / 3),
+    people: n >= 3 ? 5 + Math.floor(n / 2) : 0,
+    houses: n >= 6 ? 2 + Math.floor(n / 6) : 0,
+    buses: n >= 8 ? 1 + Math.floor(n / 8) : 0,
+  };
+}
+
+// ---------- game state ----------
+const RIVAL_NAMES = ['Nibbler', 'Chomper', 'Gobbler'];
+const RIVAL_COLORS = ['#ff5d5d', '#ffb02e', '#37c8ff'];
+const G = {
+  screen: 'menu', level: 1, score: 0, roundStartScore: 0, lives: 3,
+  timeLeft: 75, target: 320, timeLimit: 75, eaten: 0, totalEaten: 0,
+  combo: 0, comboTimer: 0, bestCombo: 1,
+  world: 900, camX: 0, camY: 0,
+  player: null, rivals: [], objs: [], parts: [],
+  invuln: 0, shake: 0, elapsed: 0,
+  pointer: { x: W / 2, y: H / 2, active: false },
+  keys: {}, clearTimer: null, best: 0,
+};
+try { G.best = parseInt(localStorage.getItem('hungryHoleBest') || '0', 10) || 0; } catch (e) {}
+function saveBest() { try { if (G.score > G.best) { G.best = G.score; localStorage.setItem('hungryHoleBest', String(G.best)); } } catch (e) {} }
+
+// ---------- object factory (all original procedural props) ----------
+const SMALL_KINDS = ['pebble', 'mushroom', 'flower', 'ball', 'berry'];
+const MED_KINDS = ['cone', 'crate', 'bush', 'hydrant', 'can'];
+const LARGE_KINDS = ['bench', 'tree', 'lamp', 'rock'];
+function makeObj(kind, r, pts, world) {
+  return { kind, r, pts, x: rand(50, world - 50), y: rand(50, world - 50),
+           rot: rand(0, Math.PI * 2), wob: rand(0, Math.PI * 2), hue: rand(0, 1) };
+}
+function buildLevel(n) {
+  const c = levelCfg(n);
+  G.world = c.world; G.target = c.target; G.timeLimit = c.time; G.timeLeft = c.time;
+  G.roundStartScore = G.score; G.eaten = 0; G.combo = 0; G.comboTimer = 0;
+  G.objs = []; G.parts = []; G.rivals = []; G.invuln = 0;
+  for (let i = 0; i < c.small; i++) G.objs.push(makeObj(SMALL_KINDS[i % SMALL_KINDS.length], rand(4, 8), 10, c.world));
+  for (let i = 0; i < c.medium; i++) G.objs.push(makeObj(MED_KINDS[i % MED_KINDS.length], rand(9, 14), 25, c.world));
+  for (let i = 0; i < c.large; i++) G.objs.push(makeObj(LARGE_KINDS[i % LARGE_KINDS.length], rand(15, 22), 60, c.world));
+  for (let i = 0; i < c.cars; i++) G.objs.push(makeObj('car', rand(16, 19), 80, c.world));
+  for (let i = 0; i < c.people; i++) G.objs.push(makeObj('wobbler', rand(10, 14), 40, c.world));
+  for (let i = 0; i < c.houses; i++) G.objs.push(makeObj('house', rand(30, 40), 150, c.world));
+  for (let i = 0; i < c.buses; i++) G.objs.push(makeObj('bus', rand(23, 26), 120, c.world));
+  buildBackground();
+  G.player = { x: c.world / 2, y: c.world / 2, r: 16, vx: 0, vy: 0, angle: 0 };
+  G.grace = 5; // round-start grace: rivals wander and snack, but don't hunt Gulp yet
+  for (let i = 0; i < c.rivals; i++) {
+    const a = (i / c.rivals) * Math.PI * 2 + 0.6;
+    G.rivals.push({ name: RIVAL_NAMES[i % 3], color: RIVAL_COLORS[i % 3],
+      x: clamp(c.world / 2 + Math.cos(a) * c.world * 0.32, 60, c.world - 60),
+      y: clamp(c.world / 2 + Math.sin(a) * c.world * 0.32, 60, c.world - 60),
+      r: c.rivalR, vx: 0, vy: 0, speed: c.rivalSpeed, wander: rand(0, Math.PI * 2),
+      eatCd: 0, respawn: 0 });
+  }
+  G.pointer.x = W / 2; G.pointer.y = H / 2; G.pointer.active = false;
+  updateHUD();
+}
+function respawnObj(old) {
+  // keep the arena stocked: a fresh prop of the same tier pops in at a random spot
+  const c = levelCfg(G.level);
+  let kind, r, pts;
+  if (old.r <= 8) { kind = SMALL_KINDS[Math.floor(rand(0, SMALL_KINDS.length))]; r = rand(4, 8); pts = 10; }
+  else if (old.r <= 14) { kind = MED_KINDS[Math.floor(rand(0, MED_KINDS.length))]; r = rand(9, 14); pts = 25; }
+  else if (old.kind === 'car') { kind = 'car'; r = rand(16, 19); pts = 80; }
+  else if (old.kind === 'wobbler') { kind = 'wobbler'; r = rand(10, 14); pts = 40; }
+  else if (old.kind === 'house') { kind = 'house'; r = rand(30, 40); pts = 150; }
+  else if (old.kind === 'bus') { kind = 'bus'; r = rand(23, 26); pts = 120; }
+  else { kind = LARGE_KINDS[Math.floor(rand(0, LARGE_KINDS.length))]; r = rand(15, 22); pts = 60; }
+  const o = makeObj(kind, r, pts, c.world);
+  // spawn away from the player so snacks don't appear under the hole
+  if (dist(o.x, o.y, G.player.x, G.player.y) < 160) { o.x = rand(50, c.world - 50); o.y = rand(50, c.world - 50); }
+  G.objs.push(o);
+}
+
+// ---------- screens ----------
+const SCREENS = ['menu', 'clear', 'timeup', 'pause', 'over', 'win'];
+function showScreen(name) {
+  G.screen = name;
+  SCREENS.forEach(s => $( 'screen-' + s).classList.toggle('hidden', s !== name));
+  if (name === 'playing') SCREENS.forEach(s => $('screen-' + s).classList.add('hidden'));
+  if (name === 'menu') $('best-line').textContent = G.best > 0 ? ('Best score: ' + G.best) : '';
+}
+function startGame() {
+  initAudio(); sfx('click');
+  G.level = 1; G.score = 0; G.lives = 3; G.totalEaten = 0; G.bestCombo = 1;
+  buildLevel(1);
+  showScreen('playing');
+}
+function nextLevel() {
+  clearTimeout(G.clearTimer);
+  G.level++;
+  if (G.level > 20) { winGame(); return; }
+  buildLevel(G.level);
+  showScreen('playing');
+}
+function levelClear() {
+  saveBest();
+  $('clear-text').textContent = 'Round ' + G.level + ' done — you ate ' + G.eaten + ' things and scored ' +
+    (G.score - G.roundStartScore) + ' points!';
+  $('clear-score').textContent = 'Total score: ' + G.score;
+  showScreen('clear');
+  sfx('clear');
+  G.clearTimer = setTimeout(() => { if (G.screen === 'clear') nextLevel(); }, 1800);
+}
+function timeUp() {
+  G.lives--;
+  updateHUD();
+  if (G.lives <= 0) { gameOver(); return; }
+  const had = G.score - G.roundStartScore;
+  G.score = G.roundStartScore; // retry keeps the score you entered the round with
+  $('timeup-text').textContent = 'Round ' + G.level + ' needed ' + G.target + ' points — you had ' +
+    had + '. One life lost!';
+  $('timeup-lives').textContent = 'Lives left: ' + '♥'.repeat(G.lives);
+  showScreen('timeup');
+  sfx('lose');
+  G.clearTimer = setTimeout(() => { if (G.screen === 'timeup') retryRound(); }, 1800);
+}
+function retryRound() {
+  clearTimeout(G.clearTimer);
+  buildLevel(G.level);
+  showScreen('playing');
+}
+function gameOver() {
+  saveBest();
+  $('over-score').textContent = 'Score: ' + G.score + '  •  Reached round ' + G.level + '  •  Best: ' + Math.max(G.best, G.score);
+  showScreen('over');
+  sfx('lose');
+}
+function winGame() {
+  saveBest();
+  $('win-score').textContent = 'Final score: ' + G.score + '  •  ' + G.totalEaten + ' things eaten  •  Best combo ×' + G.bestCombo;
+  $('win-best').textContent = 'Best score: ' + Math.max(G.best, G.score);
+  showScreen('win');
+  sfx('win');
+}
+function togglePause() {
+  if (G.screen === 'playing') { showScreen('pause'); sfx('click'); }
+  else if (G.screen === 'pause') { showScreen('playing'); sfx('click'); }
+}
+function toggleMute() {
+  muted = !muted;
+  $('btn-mute').classList.toggle('muted', muted);
+  $('btn-mute').textContent = muted ? '✕' : '♪';
+  if (masterGain) masterGain.gain.value = muted ? 0 : 0.9;
+}
+
+// ---------- HUD / toast ----------
+function updateHUD() {
+  $('hud-level').textContent = 'Round ' + G.level + '/20';
+  $('hud-score').textContent = 'Score ' + G.score;
+  $('hud-lives').textContent = '♥'.repeat(Math.max(G.lives, 0)) || '—';
+  $('hud-time').textContent = Math.ceil(Math.max(G.timeLeft, 0)) + 's';
+  $('timefill').style.width = clamp(G.timeLeft / G.timeLimit * 100, 0, 100) + '%';
+  const prog = clamp((G.score - G.roundStartScore) / G.target * 100, 0, 100);
+  $('progfill').style.width = prog + '%';
+}
+let toastTimer = null;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.opacity = 0; }, 900);
+}
+
+// ---------- input ----------
+function setPointer(e) {
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (W / rect.width);
+  const cy = (e.clientY - rect.top) * (H / rect.height);
+  G.pointer.x = clamp(cx, 0, W); G.pointer.y = clamp(cy, 0, H); G.pointer.active = true;
+}
+canvas.addEventListener('pointermove', setPointer);
+canvas.addEventListener('pointerdown', e => { setPointer(e); initAudio(); });
+canvas.addEventListener('mousemove', setPointer);
+canvas.addEventListener('touchmove', e => { if (e.touches[0]) setPointer(e.touches[0]); e.preventDefault(); }, { passive: false });
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+  G.keys[k] = true;
+  if (k === 'p' || k === 'escape') togglePause();
+  if (k === 'm') toggleMute();
+});
+window.addEventListener('keyup', e => { G.keys[e.key.toLowerCase()] = false; });
+$('btn-start').addEventListener('click', startGame);
+$('btn-next').addEventListener('click', nextLevel);
+$('btn-retry-round').addEventListener('click', retryRound);
+$('btn-again-over').addEventListener('click', startGame);
+$('btn-again-win').addEventListener('click', startGame);
+$('btn-resume').addEventListener('click', togglePause);
+$('btn-quit').addEventListener('click', () => showScreen('menu'));
+$('btn-pause').addEventListener('click', () => { initAudio(); togglePause(); });
+$('btn-mute').addEventListener('click', () => { initAudio(); toggleMute(); });
+
+// ---------- update ----------
+function burst(x, y, color, n) {
+  for (let i = 0; i < (n || 10); i++) {
+    const a = rand(0, Math.PI * 2), s = rand(30, 140);
+    G.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rand(0.3, 0.7), max: 0.7, color, r: rand(2, 5) });
+  }
+}
+function eatObject(i) {
+  const o = G.objs[i];
+  G.combo = (G.comboTimer > 0) ? G.combo + 1 : 1;
+  G.comboTimer = 2.0;
+  G.bestCombo = Math.max(G.bestCombo, G.combo);
+  const mult = Math.min(G.combo, 5);
+  const pts = o.pts * mult;
+  G.score += pts; G.eaten++; G.totalEaten++;
+  G.player.r = Math.min(G.player.r + o.r * 0.11, 64);
+  burst(o.x, o.y, '#ffd23f', 8);
+  sfx('gulp', G.combo);
+  if (G.combo >= 3) toast('Combo ×' + mult + '  +' + pts);
+  G.objs.splice(i, 1);
+  respawnObj(o);
+  updateHUD();
+  if (G.score - G.roundStartScore >= G.target) levelClear();
+}
+function playerHit(rival) {
+  if (G.invuln > 0) return;
+  G.lives--; G.invuln = 4; G.shake = 0.35;
+  G.player.r = Math.max(16, G.player.r * 0.7); // a scare shrinks Gulp, but not right back to the start
+  const kd = Math.hypot(G.player.x - rival.x, G.player.y - rival.y) || 1;
+  G.player.x = clamp(G.player.x + (G.player.x - rival.x) / kd * 90, 40, G.world - 40);
+  G.player.y = clamp(G.player.y + (G.player.y - rival.y) / kd * 90, 40, G.world - 40);
+  G.player.vx = (G.player.x - rival.x) / kd * 320;
+  G.player.vy = (G.player.y - rival.y) / kd * 320;
+  rival.hitCd = 3; // the rival that just scored backs off and wanders for a while
+  burst(G.player.x, G.player.y, '#ff5d7d', 16);
+  sfx('hurt');
+  toast('Ouch! ' + rival.name + ' is bigger!');
+  updateHUD();
+  if (G.lives <= 0) gameOver();
+}
+function eatRival(r) {
+  G.score += 300; G.totalEaten++;
+  G.player.r = Math.min(G.player.r + 4, 64);
+  burst(r.x, r.y, r.color, 22);
+  sfx('chomp');
+  toast('Ate ' + r.name + '! +300');
+  r.respawn = 5; r.r = 12; // it slinks back later, small and humbled
+  r.x = rand(60, G.world - 60); r.y = rand(60, G.world - 60);
+  updateHUD();
+  if (G.score - G.roundStartScore >= G.target) levelClear();
+}
+function update(dt) {
+  if (G.screen !== 'playing') return;
+  G.elapsed += dt;
+  G.timeLeft -= dt;
+  if (G.comboTimer > 0) { G.comboTimer -= dt; if (G.comboTimer <= 0) G.combo = 0; }
+  if (G.invuln > 0) G.invuln -= dt;
+  if (G.grace > 0) G.grace -= dt;
+  if (G.shake > 0) G.shake -= dt;
+  if (G.timeLeft <= 0) { G.timeLeft = 0; updateHUD(); timeUp(); return; }
+
+  const p = G.player;
+  // steering: keyboard overrides pointer
+  let dx = 0, dy = 0;
+  if (G.keys['arrowup'] || G.keys['w']) dy -= 1;
+  if (G.keys['arrowdown'] || G.keys['s']) dy += 1;
+  if (G.keys['arrowleft'] || G.keys['a']) dx -= 1;
+  if (G.keys['arrowright'] || G.keys['d']) dx += 1;
+  if (dx || dy) {
+    const l = Math.hypot(dx, dy); dx /= l; dy /= l;
+    p.vx += dx * 1700 * dt; p.vy += dy * 1700 * dt;
+  } else if (G.pointer.active) {
+    const wx = G.pointer.x + G.camX, wy = G.pointer.y + G.camY;
+    const d = dist(p.x, p.y, wx, wy);
+    if (d > p.r * 0.6) {
+      p.vx += ((wx - p.x) / d) * 1700 * dt;
+      p.vy += ((wy - p.y) / d) * 1700 * dt;
+    }
+  }
+  const maxSp = 340;
+  const sp = Math.hypot(p.vx, p.vy);
+  if (sp > maxSp) { p.vx *= maxSp / sp; p.vy *= maxSp / sp; }
+  p.vx *= Math.pow(0.12, dt); p.vy *= Math.pow(0.12, dt); // smooth drag
+  p.x = clamp(p.x + p.vx * dt, p.r, G.world - p.r);
+  p.y = clamp(p.y + p.vy * dt, p.r, G.world - p.r);
+  if (sp > 20) p.angle = Math.atan2(p.vy, p.vx);
+
+  // camera follows the hole
+  G.camX = clamp(p.x - W / 2, 0, Math.max(G.world - W, 0));
+  G.camY = clamp(p.y - H / 2, 0, Math.max(G.world - H, 0));
+
+  // eat objects
+  for (let i = G.objs.length - 1; i >= 0; i--) {
+    const o = G.objs[i];
+    if (o.r < p.r * 0.92 && dist(p.x, p.y, o.x, o.y) < p.r * 0.9) { eatObject(i); if (G.screen !== 'playing') return; }
+  }
+
+  // rivals: wander, hunt snacks, chase a smaller Gulp, flee a bigger one
+  for (const r of G.rivals) {
+    if (r.respawn > 0) { r.respawn -= dt; if (r.respawn <= 0) { r.r = Math.max(r.r, levelCfg(G.level).rivalR * 0.6); } else continue; }
+    if (r.hitCd > 0) r.hitCd -= dt;
+    let tx, ty;
+    const dPlayer = dist(r.x, r.y, p.x, p.y);
+    if (r.r > p.r * 1.05 && dPlayer < 130 && G.grace <= 0 && r.hitCd <= 0) { tx = p.x; ty = p.y; } // bigger rival hunts (after grace)
+    else if (p.r > r.r * 1.05 && dPlayer < 170) { tx = r.x + (r.x - p.x); ty = r.y + (r.y - p.y); } // flee
+    else {
+      let best = null, bd = 1e9;
+      for (const o of G.objs) if (o.r < r.r * 0.92) { const d = dist(r.x, r.y, o.x, o.y); if (d < bd) { bd = d; best = o; } }
+      if (best) { tx = best.x; ty = best.y; } else { r.wander += rand(-0.6, 0.6) * dt * 3; tx = r.x + Math.cos(r.wander) * 100; ty = r.y + Math.sin(r.wander) * 100; }
+    }
+    const d = dist(r.x, r.y, tx, ty) || 1;
+    r.vx += ((tx - r.x) / d) * 900 * dt; r.vy += ((ty - r.y) / d) * 900 * dt;
+    const rs = Math.hypot(r.vx, r.vy);
+    if (rs > r.speed) { r.vx *= r.speed / rs; r.vy *= r.speed / rs; }
+    r.vx *= Math.pow(0.2, dt); r.vy *= Math.pow(0.2, dt);
+    r.x = clamp(r.x + r.vx * dt, r.r, G.world - r.r);
+    r.y = clamp(r.y + r.vy * dt, r.r, G.world - r.r);
+    // rival eats snacks too (and grows)
+    for (let i = G.objs.length - 1; i >= 0; i--) {
+      const o = G.objs[i];
+      if (o.r < r.r * 0.92 && dist(r.x, r.y, o.x, o.y) < r.r * 0.8) {
+        r.r = Math.min(r.r + o.r * 0.015, 38);
+        G.objs.splice(i, 1); respawnObj(o);
+        break;
+      }
+    }
+    // rival vs player
+    if (dist(p.x, p.y, r.x, r.y) < (p.r + r.r) * 0.6) {
+      if (r.r > p.r * 1.05) { playerHit(r); if (G.screen !== 'playing') return; }
+      else if (p.r > r.r * 1.05) { eatRival(r); if (G.screen !== 'playing') return; }
+    }
+  }
+
+  // particles
+  for (let i = G.parts.length - 1; i >= 0; i--) {
+    const q = G.parts[i];
+    q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt;
+    if (q.life <= 0) G.parts.splice(i, 1);
+  }
+  updateHUD();
+}
+
+// ---------- drawing (all procedural) ----------
+function drawHole(x, y, r, rim, t, blink) {
+  ctx.save(); ctx.translate(x, y);
+  // rim
+  const g = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r);
+  g.addColorStop(0, '#05060f'); g.addColorStop(0.75, '#0d0a24'); g.addColorStop(0.92, rim); g.addColorStop(1, rim);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.86, 0, 0, Math.PI * 2); ctx.fill();
+  // swirl
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = Math.max(2, r * 0.07); ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    const a0 = t * 1.6 + i * 2.1, rr = r * (0.62 - i * 0.16);
+    ctx.arc(0, 0, rr, a0, a0 + 2.4); ctx.stroke();
+  }
+  // eyes on the rim (blink = invulnerable flicker)
+  if (blink) { ctx.globalAlpha = 0.35 + 0.3 * Math.sin(t * 20); }
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(-r * 0.38, -r * 0.62, r * 0.16, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.38, -r * 0.62, r * 0.16, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-r * 0.38, -r * 0.58, r * 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.38, -r * 0.58, r * 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function drawObj(o, t) {
+  const x = o.x - G.camX, y = o.y - G.camY, r = o.r;
+  if (x < -60 || y < -60 || x > W + 60 || y > H + 60) return;
+  const bob = Math.sin(t * 2 + o.wob) * 1.5;
+  ctx.save(); ctx.translate(x, y + bob);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.75, r * 0.9, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.rotate(o.kind === 'car' || o.kind === 'bus' || o.kind === 'house' ? o.rot : 0);
+  switch (o.kind) {
+    case 'pebble': ctx.fillStyle = '#9aa3b2'; ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.8, 0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c3cad6'; ctx.beginPath(); ctx.ellipse(-r * 0.25, -r * 0.25, r * 0.4, r * 0.3, 0, 0, Math.PI * 2); ctx.fill(); break;
+    case 'mushroom':
+      ctx.fillStyle = '#f5ead6'; ctx.fillRect(-r * 0.3, 0, r * 0.6, r * 0.7);
+      ctx.fillStyle = '#e2453c'; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-r * 0.4, -r * 0.45, r * 0.18, 0, Math.PI * 2); ctx.arc(r * 0.35, -r * 0.55, r * 0.15, 0, Math.PI * 2); ctx.fill(); break;
+    case 'flower':
+      ctx.fillStyle = ['#ff7ad9', '#ffd23f', '#ff9d5c'][Math.floor(o.hue * 3)];
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; ctx.beginPath(); ctx.arc(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * 0.45, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2); ctx.fill(); break;
+    case 'ball':
+      ctx.fillStyle = '#ff5d5d'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff5d5d'; ctx.beginPath(); ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2); ctx.fill(); break;
+    case 'berry':
+      ctx.fillStyle = '#7a3cff'; [[-0.4, -0.2], [0.4, -0.2], [0, 0.4]].forEach(p => { ctx.beginPath(); ctx.arc(p[0] * r, p[1] * r, r * 0.5, 0, Math.PI * 2); ctx.fill(); });
+      ctx.fillStyle = '#b388ff'; ctx.beginPath(); ctx.arc(-r * 0.2, -r * 0.3, r * 0.18, 0, Math.PI * 2); ctx.fill(); break;
+    case 'cone':
+      ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r * 0.8, r * 0.7); ctx.lineTo(-r * 0.8, r * 0.7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(-r * 0.55, -r * 0.15, r * 1.1, r * 0.3);
+      ctx.fillStyle = '#d94f04'; ctx.fillRect(-r, r * 0.7, r * 2, r * 0.3); break;
+    case 'crate':
+      ctx.fillStyle = '#b07a3e'; ctx.fillRect(-r, -r, r * 2, r * 2);
+      ctx.strokeStyle = '#7a4d1c'; ctx.lineWidth = 2; ctx.strokeRect(-r, -r, r * 2, r * 2);
+      ctx.beginPath(); ctx.moveTo(-r, -r); ctx.lineTo(r, r); ctx.moveTo(r, -r); ctx.lineTo(-r, r); ctx.stroke(); break;
+    case 'bush':
+      ctx.fillStyle = '#3f9e4d';
+      [[-0.5, 0.2], [0.5, 0.2], [0, -0.4]].forEach(p => { ctx.beginPath(); ctx.arc(p[0] * r, p[1] * r, r * 0.7, 0, Math.PI * 2); ctx.fill(); });
+      ctx.fillStyle = '#ff5d7d'; ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.3, r * 0.16, 0, Math.PI * 2); ctx.arc(r * 0.4, 0, r * 0.16, 0, Math.PI * 2); ctx.fill(); break;
+    case 'hydrant':
+      ctx.fillStyle = '#e2453c'; ctx.fillRect(-r * 0.5, -r * 0.7, r, r * 1.5);
+      ctx.beginPath(); ctx.arc(0, -r * 0.8, r * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(0, -r * 0.3, r * 0.18, 0, Math.PI * 2); ctx.fill(); break;
+    case 'can':
+      ctx.fillStyle = '#5b6b7f'; ctx.fillRect(-r * 0.7, -r * 0.9, r * 1.4, r * 1.8);
+      ctx.fillStyle = '#7d8ea3'; ctx.fillRect(-r * 0.7, -r * 0.9, r * 1.4, r * 0.3);
+      ctx.strokeStyle = '#39465a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -r * 0.9); ctx.lineTo(0, -r * 1.3); ctx.stroke(); break;
+    case 'bench':
+      ctx.fillStyle = '#8a5a2b'; ctx.fillRect(-r, -r * 0.4, r * 2, r * 0.5);
+      ctx.fillStyle = '#5e3a17'; ctx.fillRect(-r * 0.8, r * 0.1, r * 0.25, r * 0.8); ctx.fillRect(r * 0.55, r * 0.1, r * 0.25, r * 0.8); break;
+    case 'tree':
+      ctx.fillStyle = '#6b4423'; ctx.fillRect(-r * 0.15, 0, r * 0.3, r * 0.9);
+      ctx.fillStyle = '#2f7d3a'; ctx.beginPath(); ctx.arc(0, -r * 0.5, r * 0.95, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3f9e4d'; ctx.beginPath(); ctx.arc(-r * 0.4, -r * 0.2, r * 0.5, 0, Math.PI * 2); ctx.arc(r * 0.45, -r * 0.25, r * 0.5, 0, Math.PI * 2); ctx.fill(); break;
+    case 'lamp':
+      ctx.fillStyle = '#3a3f4d'; ctx.fillRect(-r * 0.12, -r, r * 0.24, r * 2);
+      ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(0, -r * 1.1, r * 0.45, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,210,63,0.25)'; ctx.beginPath(); ctx.arc(0, -r * 1.1, r, 0, Math.PI * 2); ctx.fill(); break;
+    case 'rock':
+      ctx.fillStyle = '#7d8899'; ctx.beginPath(); ctx.moveTo(-r, r * 0.5); ctx.lineTo(-r * 0.5, -r * 0.8); ctx.lineTo(r * 0.6, -r * 0.6); ctx.lineTo(r, r * 0.4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#9aa3b2'; ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.8); ctx.lineTo(r * 0.6, -r * 0.6); ctx.lineTo(r * 0.2, 0); ctx.closePath(); ctx.fill(); break;
+    case 'car': {
+      const cols = ['#e2453c', '#37c8ff', '#ffd23f', '#7dffb0'];
+      ctx.fillStyle = cols[Math.floor(o.hue * 4)];
+      ctx.beginPath(); ctx.roundRect(-r * 1.25, -r * 0.7, r * 2.5, r * 1.4, r * 0.35); ctx.fill();
+      ctx.fillStyle = '#bfe9ff'; ctx.beginPath(); ctx.roundRect(-r * 0.55, -r * 0.45, r * 1.1, r * 0.9, r * 0.2); ctx.fill();
+      ctx.fillStyle = '#222'; [[-0.85, -0.75], [0.85, -0.75], [-0.85, 0.75], [0.85, 0.75]].forEach(p => { ctx.beginPath(); ctx.arc(p[0] * r, p[1] * r, r * 0.22, 0, Math.PI * 2); ctx.fill(); });
+      break; }
+    case 'bus':
+      ctx.fillStyle = '#ffb02e'; ctx.beginPath(); ctx.roundRect(-r * 1.5, -r * 0.75, r * 3, r * 1.5, r * 0.3); ctx.fill();
+      ctx.fillStyle = '#bfe9ff'; for (let i = 0; i < 4; i++) ctx.fillRect(-r * 1.2 + i * r * 0.65, -r * 0.45, r * 0.45, r * 0.6);
+      ctx.fillStyle = '#222'; [[-1.0, -0.8], [1.0, -0.8], [-1.0, 0.8], [1.0, 0.8]].forEach(p => { ctx.beginPath(); ctx.arc(p[0] * r, p[1] * r, r * 0.25, 0, Math.PI * 2); ctx.fill(); });
+      break;
+    case 'house':
+      ctx.fillStyle = '#f2d8a7'; ctx.fillRect(-r * 0.9, -r * 0.3, r * 1.8, r * 1.1);
+      ctx.fillStyle = '#c25b4e'; ctx.beginPath(); ctx.moveTo(-r * 1.1, -r * 0.3); ctx.lineTo(0, -r * 1.15); ctx.lineTo(r * 1.1, -r * 0.3); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#6b4423'; ctx.fillRect(-r * 0.2, r * 0.2, r * 0.4, r * 0.6);
+      ctx.fillStyle = '#bfe9ff'; ctx.fillRect(-r * 0.7, -r * 0.1, r * 0.35, r * 0.35); ctx.fillRect(r * 0.35, -r * 0.1, r * 0.35, r * 0.35); break;
+    case 'wobbler': {
+      // original round townsfolk ("Wobblers") — they waddle about the park
+      const cols = ['#ff8fb0', '#7db8ff', '#ffd23f', '#9dff8f'];
+      const c = cols[Math.floor(o.hue * 4)];
+      const wadd = Math.sin(t * 6 + o.wob) * r * 0.15;
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffe3c2'; ctx.beginPath(); ctx.arc(0, -r * 0.75, r * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(-r * 0.18, -r * 0.8, r * 0.08, 0, Math.PI * 2); ctx.arc(r * 0.18, -r * 0.8, r * 0.08, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(-r * 0.5, r * 0.75 + wadd, r * 0.22, 0, Math.PI * 2); ctx.arc(r * 0.5, r * 0.75 - wadd, r * 0.22, 0, Math.PI * 2); ctx.fill();
+      break; }
+  }
+  ctx.restore();
+}
+// Pre-rendered park background: tiles + path + speckles are baked once per
+// level into an offscreen canvas, so each frame is a single drawImage blit.
+let bgCanvas = null;
+function buildBackground() {
+  bgCanvas = document.createElement('canvas');
+  bgCanvas.width = G.world; bgCanvas.height = G.world;
+  const b = bgCanvas.getContext('2d');
+  const tile = 90;
+  for (let x = 0; x < G.world; x += tile) {
+    for (let y = 0; y < G.world; y += tile) {
+      b.fillStyle = (((x / tile) + (y / tile)) % 2 === 0) ? '#69b455' : '#5da84e';
+      b.fillRect(x, y, tile, tile);
+    }
+  }
+  // winding path band across the world
+  b.strokeStyle = '#d9c08a'; b.lineWidth = 46; b.lineCap = 'round';
+  b.beginPath();
+  for (let x = 0; x <= G.world; x += 60) {
+    const y = G.world * 0.5 + Math.sin(x / 260) * 130;
+    if (x === 0) b.moveTo(x, y); else b.lineTo(x, y);
+  }
+  b.stroke();
+  // deterministic speckles: tiny flowers and pebble dots
+  let seed = 12345;
+  const srand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < G.world * 0.12; i++) {
+    const x = srand() * G.world, y = srand() * G.world;
+    b.fillStyle = srand() > 0.5 ? 'rgba(255,255,255,0.20)' : 'rgba(0,60,0,0.12)';
+    b.beginPath(); b.arc(x, y, 2 + srand() * 2.5, 0, Math.PI * 2); b.fill();
+  }
+  // world border
+  b.strokeStyle = 'rgba(255,255,255,0.5)'; b.lineWidth = 4;
+  b.strokeRect(2, 2, G.world - 4, G.world - 4);
+}
+function drawBackground() {
+  if (!bgCanvas) buildBackground();
+  ctx.drawImage(bgCanvas, G.camX, G.camY, W, H, 0, 0, W, H);
+}
+function render(t) {
+  ctx.clearRect(0, 0, W, H);
+  if (G.screen === 'menu') { drawMenuBackdrop(t); return; }
+  ctx.save();
+  if (G.shake > 0) ctx.translate(rand(-4, 4), rand(-4, 4));
+  drawBackground();
+  const sorted = [...G.objs].sort((a, b) => a.r - b.r);
+  for (const o of sorted) drawObj(o, t);
+  // rivals (with name labels)
+  for (const r of G.rivals) {
+    if (r.respawn > 0) continue;
+    drawHole(r.x - G.camX, r.y - G.camY, r.r, r.color, t, false);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Trebuchet MS'; ctx.textAlign = 'center';
+    ctx.fillText(r.name, r.x - G.camX, r.y - G.camY - r.r - 6);
+  }
+  // player
+  if (G.player) {
+    drawHole(G.player.x - G.camX, G.player.y - G.camY, G.player.r, '#b388ff', t, G.invuln > 0);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Trebuchet MS'; ctx.textAlign = 'center';
+    ctx.fillText('GULP', G.player.x - G.camX, G.player.y - G.camY - G.player.r - 6);
+  }
+  // particles
+  for (const q of G.parts) {
+    ctx.globalAlpha = clamp(q.life / q.max, 0, 1);
+    ctx.fillStyle = q.color;
+    ctx.beginPath(); ctx.arc(q.x - G.camX, q.y - G.camY, q.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  // edge hint: arrow toward nearest edible when nothing edible is on screen
+  if (G.screen === 'playing' && G.player) {
+    let best = null, bd = 1e9;
+    for (const o of G.objs) if (o.r < G.player.r * 0.92) { const d = dist(G.player.x, G.player.y, o.x, o.y); if (d < bd) { bd = d; best = o; } }
+    if (best) {
+      const sx = best.x - G.camX, sy = best.y - G.camY;
+      if (sx < 0 || sy < 0 || sx > W || sy > H) {
+        const cx = clamp(sx, 30, W - 30), cy = clamp(sy, 70, H - 30);
+        const a = Math.atan2(sy - cy, sx - cx);
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
+        ctx.fillStyle = '#ffd23f';
+        ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -9); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+}
+function drawMenuBackdrop(t) {
+  // animated lawn + a demo Gulp hole swallowing drifting snacks behind the menu
+  G.camX = 0; G.camY = 0; G.world = 900;
+  drawBackground();
+  const demo = [{ x: 120 + Math.sin(t * 0.7) * 30, y: 560, r: 52 }];
+  drawHole(demo[0].x, demo[0].y, demo[0].r, '#b388ff', t, false);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Trebuchet MS'; ctx.textAlign = 'center';
+  ctx.fillText('GULP', demo[0].x, demo[0].y - 64);
+  // drifting snacks
+  const kinds = ['pebble', 'mushroom', 'flower', 'ball'];
+  for (let i = 0; i < 6; i++) {
+    const ox = 60 + i * 70, oy = 130 + Math.sin(t + i * 1.3) * 14;
+    drawObj({ kind: kinds[i % 4], r: 12, x: ox, y: oy, rot: 0, wob: i, hue: i / 6 }, t);
+  }
+  // demo canvas in the menu (separate small canvas)
+  const dc = $('demo-canvas').getContext('2d');
+  dc.clearRect(0, 0, 220, 220);
+  dc.save(); dc.translate(110, 110);
+  const g = dc.createRadialGradient(0, 0, 10, 0, 0, 78);
+  g.addColorStop(0, '#05060f'); g.addColorStop(0.75, '#0d0a24'); g.addColorStop(0.92, '#b388ff'); g.addColorStop(1, '#b388ff');
+  dc.fillStyle = g; dc.beginPath(); dc.ellipse(0, 0, 78, 67, 0, 0, Math.PI * 2); dc.fill();
+  dc.strokeStyle = 'rgba(255,255,255,0.4)'; dc.lineWidth = 5; dc.lineCap = 'round';
+  for (let i = 0; i < 3; i++) { dc.beginPath(); const a0 = t * 1.6 + i * 2.1; dc.arc(0, 0, 48 - i * 12, a0, a0 + 2.4); dc.stroke(); }
+  dc.fillStyle = '#fff';
+  dc.beginPath(); dc.ellipse(-30, -48, 12, 15, 0, 0, Math.PI * 2); dc.fill();
+  dc.beginPath(); dc.ellipse(30, -48, 12, 15, 0, 0, Math.PI * 2); dc.fill();
+  dc.fillStyle = '#111';
+  dc.beginPath(); dc.arc(-30, -44, 6, 0, Math.PI * 2); dc.fill();
+  dc.beginPath(); dc.arc(30, -44, 6, 0, Math.PI * 2); dc.fill();
+  dc.restore();
+}
+
+// ---------- main loop ----------
+// Simulation runs on a fixed 30 Hz timer, decoupled from rendering:
+// headless/weak GPUs can present at ~1 fps, but the game must still run
+// in real time (steering, timer, eating). Rendering stays on rAF.
+let lastSim = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  let dt = Math.min((now - lastSim) / 1000, 0.1);
+  lastSim = now;
+  while (dt > 0.0001) {
+    const h = Math.min(dt, 1 / 60);
+    update(h);
+    dt -= h;
+    if (G.screen !== 'playing') break;
+  }
+}, 33);
+function loop(ts) {
+  render(ts / 1000);
+  requestAnimationFrame(loop);
+}
+buildBackground(); // menu backdrop (world 900)
+updateHUD();
+$('best-line').textContent = G.best > 0 ? ('Best score: ' + G.best) : '';
+requestAnimationFrame(loop);
+
+// ---------- test hook (state only, used by the automated test) ----------
+window.__hungryGame = function () {
+  let nearest = null, nd = 1e9, rival = null;
+  if (G.player) {
+    for (const o of G.objs) {
+      if (o.r < G.player.r * 0.92) {
+        const d = dist(G.player.x, G.player.y, o.x, o.y);
+        if (d < nd) { nd = d; nearest = o; }
+      }
+    }
+    if (!nearest && G.objs.length) { nearest = G.objs[0]; nd = dist(G.player.x, G.player.y, nearest.x, nearest.y); }
+    let rd = 1e9;
+    for (const r of G.rivals) {
+      if (r.respawn > 0) continue;
+      const d = dist(G.player.x, G.player.y, r.x, r.y);
+      if (d < rd) { rd = d; rival = r; }
+    }
+  }
+  const toScreen = o => o ? { x: clamp(o.x - G.camX, 10, W - 10), y: clamp(o.y - G.camY, 60, H - 10) } : null;
+  let bestTarget = null, bestScore = -1;
+  if (G.player) {
+    for (const o of G.objs) {
+      if (o.r < G.player.r * 0.92) {
+        const v = o.pts / (dist(G.player.x, G.player.y, o.x, o.y) + 40);
+        if (v > bestScore) { bestScore = v; bestTarget = o; }
+      }
+    }
+  }
+  return {
+    screen: G.screen, level: G.level, score: G.score, lives: G.lives,
+    timeLeft: Math.ceil(Math.max(G.timeLeft, 0)), target: G.target,
+    progress: G.score - G.roundStartScore,
+    playerR: G.player ? +G.player.r.toFixed(1) : 0,
+    eaten: G.eaten, totalEaten: G.totalEaten, muted, invuln: G.invuln > 0,
+    playerScreen: G.player ? { x: G.player.x - G.camX, y: G.player.y - G.camY } : null,
+    playerWorld: G.player ? { x: Math.round(G.player.x), y: Math.round(G.player.y) } : null,
+    nearestEdible: toScreen(nearest),
+    bestTarget: toScreen(bestTarget),
+    nearestRival: rival ? Object.assign(toScreen(rival), { bigger: rival.r > G.player.r * 1.05, r: +rival.r.toFixed(1) }) : null,
+    rivalEdible: (() => { let e = null, ed = 1e9; for (const r of G.rivals) { if (r.respawn > 0) continue; if (G.player.r > r.r * 1.05) { const d = dist(G.player.x, G.player.y, r.x, r.y); if (d < ed) { ed = d; e = r; } } } return toScreen(e); })(),
+    rivals: G.rivals.filter(r => r.respawn <= 0).map(r => { const p = toScreen(r); return { x: p.x, y: p.y, bigger: r.r > G.player.r * 1.05, r: +r.r.toFixed(1) }; }),
+    edibles: (() => { const arr = []; for (const o of G.objs) if (o.r < G.player.r * 0.92) { const p = toScreen(o); arr.push({ x: p.x, y: p.y, pts: o.pts }); } arr.sort((a, b) => b.pts - a.pts); return arr.slice(0, 14); })(),
+    world: G.world, objCount: G.objs.length, rivalCount: G.rivals.length,
+  };
+};
+</script>
+</body>
+</html>
